@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#f5f7fb">
+  <title>{% block title %}Agentic SDLC Studio{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/studio.css">
+  <script defer src="/static/js/studio.js"></script>
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+  {% if current_user %}
+  <header class="app-header">
+    <a class="brand" href="/projects" aria-label="Agentic SDLC Studio home">
+      <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span><strong>Agentic</strong><small>SDLC Studio</small></span>
+    </a>
+    <nav class="desktop-nav" aria-label="Main navigation">
+      <a href="/projects" {% if active_page == 'projects' %}aria-current="page"{% endif %}>Projects</a>
+      <a href="/projects/new" {% if active_page == 'new-project' %}aria-current="page"{% endif %}>New project</a>
+    </nav>
+    <div class="header-actions">
+      <span class="environment-pill"><span class="status-dot status-dot--ok"></span>Local workspace</span>
+      <details class="user-menu">
+        <summary aria-label="Open user menu">
+          <span class="avatar">{{ (current_user.name or current_user.email or 'U')[:1] | upper }}</span>
+          <span class="user-name">{{ current_user.name or current_user.email }}</span>
+        </summary>
+        <div class="user-menu-panel">
+          <span class="muted">Signed in as</span>
+          <strong>{{ current_user.email }}</strong>
+          <form method="post" action="/logout">{% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}<button class="menu-button" type="submit">Sign out</button></form>
+        </div>
+      </details>
+      <button class="nav-toggle" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="mobile-nav">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+  <nav id="mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden>
+    <a href="/projects">Projects</a>
+    <a href="/projects/new">New project</a>
+    <form method="post" action="/logout">{% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}<button type="submit">Sign out</button></form>
+  </nav>
+  {% endif %}
+
+  {% if flash_message %}
+  <div class="flash-wrap" role="status" aria-live="polite">
+    <div class="flash flash--{{ flash_type or 'success' }}">{{ flash_message }}</div>
+  </div>
+  {% endif %}
+
+  <main id="main-content" tabindex="-1">
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% set active_page = 'projects' %}
+{% block title %}Projects · Agentic SDLC Studio{% endblock %}
+{% block content %}
+<div class="page-shell">
+  <section class="page-heading page-heading--with-action">
+    <div>
+      <p class="eyebrow">Delivery workspace</p>
+      <h1>Your software projects</h1>
+      <p>Coordinate specialized agents through a governed development lifecycle.</p>
+    </div>
+    <a class="button button--primary" href="/projects/new"><span aria-hidden="true">＋</span> Start a project</a>
+  </section>
+
+  <section class="summary-grid" aria-label="Project summary">
+    <article class="stat-card"><span>Active projects</span><strong>{{ stats.active if stats else (projects | length) }}</strong><small>Currently in delivery</small></article>
+    <article class="stat-card"><span>Awaiting approval</span><strong>{{ stats.awaiting_approval if stats else 0 }}</strong><small>Human decision required</small></article>
+    <article class="stat-card"><span>Completed</span><strong>{{ stats.completed if stats else 0 }}</strong><small>Successfully reviewed</small></article>
+    <article class="stat-card stat-card--accent"><span>Agent activity</span><strong>{{ stats.agent_tasks if stats else 0 }}</strong><small>Tasks across all projects</small></article>
+  </section>
+
+  <section class="section-block">
+    <div class="section-heading">
+      <div><p class="eyebrow">Portfolio</p><h2>Recent projects</h2></div>
+      {% if projects %}<label class="search-field"><span class="sr-only">Search projects</span><input type="search" placeholder="Search projects" data-project-search></label>{% endif %}
+    </div>
+    {% if projects %}
+    <div class="project-grid" data-project-list>
+      {% for project in projects %}
+      <article class="project-card" data-project-card data-search-text="{{ project.name }} {{ project.description or project.requirements or '' }}">
+        <div class="project-card-top">
+          <span class="method-badge method-badge--{{ (project.methodology or project.sdlc_style or 'agile') | lower }}">{{ project.methodology or project.sdlc_style or 'Agile' }}</span>
+          <span class="project-state"><span class="status-dot status-dot--{{ 'ok' if project.status in ['completed', 'active'] else 'wait' }}"></span>{{ (project.status or 'Planning') | replace('_', ' ') | title }}</span>
+        </div>
+        <div>
+          <h3><a href="/projects/{{ project.id }}">{{ project.name }}</a></h3>
+          <p>{{ project.description or project.requirements or 'No project summary provided.' }}</p>
+        </div>
+        <div class="phase-mini" aria-label="Project progress">
+          {% set phase_index = project.phase_index or 1 %}
+          {% for phase in ['Plan', 'Implement', 'Test', 'Review'] %}<span class="{{ 'is-complete' if loop.index < phase_index else 'is-current' if loop.index == phase_index else '' }}" title="{{ phase }}"></span>{% endfor %}
+        </div>
+        <div class="project-card-footer">
+          <span>{{ project.current_phase or 'Plan' }}</span>
+          <a href="/projects/{{ project.id }}">Open control room <span aria-hidden="true">→</span></a>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+    <p class="empty-search" data-empty-search hidden>No projects match that search.</p>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-illustration" aria-hidden="true"><span></span><span></span><span></span></div>
+      <h3>Build your first project with an agent team</h3>
+      <p>Describe an idea, choose your SDLC style and approve the plan before any code changes.</p>
+      <a class="button button--primary" href="/projects/new">Start your first project</a>
+    </div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

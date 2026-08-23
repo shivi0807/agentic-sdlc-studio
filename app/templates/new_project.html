@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% set active_page = 'new-project' %}
+{% block title %}New project · Agentic SDLC Studio{% endblock %}
+{% block content %}
+<div class="page-shell page-shell--narrow">
+  <a class="back-link" href="/projects"><span aria-hidden="true">←</span> Back to projects</a>
+  <section class="page-heading">
+    <p class="eyebrow">New SDLC run</p>
+    <h1>What should the team build?</h1>
+    <p>Provide enough context for the Planning Agent. No code is changed until you approve its plan.</p>
+  </section>
+
+  <form class="project-form" method="post" action="/projects" novalidate>
+    {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+    {% if errors and errors.form %}<div class="form-alert" role="alert">{{ errors.form }}</div>{% endif %}
+    <section class="form-section">
+      <div class="form-section-number">1</div>
+      <div class="form-section-body">
+        <div class="form-section-heading"><h2>Project brief</h2><p>Start with the outcome and the people who will use it.</p></div>
+        <label class="field">
+          <span>Project name</span>
+          <input type="text" name="name" value="{{ form.name if form else '' }}" maxlength="100" placeholder="Example: Inventory forecasting dashboard" required>
+          {% if errors and errors.name %}<small class="field-error">{{ errors.name }}</small>{% endif %}
+        </label>
+        <label class="field">
+          <span>Idea or software requirements</span>
+          <textarea name="requirements" rows="9" maxlength="12000" placeholder="Describe the problem, users, important capabilities, constraints and what success looks like..." required>{{ form.requirements if form else '' }}</textarea>
+          <small>Do not include passwords, tokens or production customer data. <span data-char-count>0 / 12,000</span></small>
+          {% if errors and errors.requirements %}<small class="field-error">{{ errors.requirements }}</small>{% endif %}
+        </label>
+      </div>
+    </section>
+
+    <section class="form-section">
+      <div class="form-section-number">2</div>
+      <div class="form-section-body">
+        <div class="form-section-heading"><h2>Choose your delivery style</h2><p>The same agent teams adapt their checkpoints to the selected methodology.</p></div>
+        <fieldset class="choice-grid">
+          <legend class="sr-only">SDLC methodology</legend>
+          {% for value, title, description in [
+            ('agile', 'Agile', 'Deliver in short sprints with a prioritized backlog and frequent review.'),
+            ('waterfall', 'Waterfall', 'Complete and approve each phase before moving to the next.'),
+            ('hybrid', 'Hybrid', 'Approve the architecture up front, then deliver features iteratively.')
+          ] %}
+          <label class="choice-card">
+            <input type="radio" name="methodology" value="{{ value }}" {% if (form and form.methodology == value) or (not form and value == 'agile') %}checked{% endif %}>
+            <span class="choice-check" aria-hidden="true"></span>
+            <strong>{{ title }}</strong><small>{{ description }}</small>
+          </label>
+          {% endfor %}
+        </fieldset>
+      </div>
+    </section>
+
+    <section class="form-section">
+      <div class="form-section-number">3</div>
+      <div class="form-section-body">
+        <div class="form-section-heading"><h2>Technical context</h2><p>Optional details help the team make a safer, more relevant plan.</p></div>
+        <div class="field-grid">
+          <label class="field"><span>Project-relative workspace folder <em>Optional</em></span><input type="text" name="repository_path" value="{{ form.repository_path if form else '' }}" placeholder="workspaces/my-app"><small>Use a safe folder inside this Studio workspace—not an absolute system path.</small></label>
+          <label class="field"><span>Preferred technology stack <em>Optional</em></span><input type="text" name="technology_stack" value="{{ form.technology_stack if form else '' }}" placeholder="Python, FastAPI, PostgreSQL"></label>
+        </div>
+        <label class="field"><span>Constraints and acceptance criteria <em>Optional</em></span><textarea name="constraints" rows="5" placeholder="Example: Must run locally, pass accessibility checks and avoid paid services.">{{ form.constraints if form else '' }}</textarea></label>
+      </div>
+    </section>
+
+    <div class="form-submit-bar">
+      <div><strong>Next: Planning Agent</strong><small>The agent creates a plan for your approval.</small></div>
+      <button class="button button--primary" type="submit">Create project and plan <span aria-hidden="true">→</span></button>
+    </div>
+  </form>
+</div>
+{% endblock %}

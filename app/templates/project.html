@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} · Agentic SDLC Studio{% endblock %}
+{% block content %}
+{% set current_phase = project.current_phase or 'plan' %}
+<div class="control-shell">
+  <header class="control-heading">
+    <div>
+      <a class="back-link" href="/projects"><span aria-hidden="true">←</span> All projects</a>
+      <div class="heading-meta"><span class="method-badge method-badge--{{ (project.methodology or 'agile') | lower }}">{{ project.methodology or 'Agile' }}</span><span class="project-id">{{ project.ticket_id or ('PROJECT-' ~ project.id) }}</span></div>
+      <h1>{{ project.name }}</h1>
+      <p>{{ project.summary or project.requirements }}</p>
+    </div>
+    <div class="heading-actions">
+      <span class="project-state project-state--large"><span class="status-dot status-dot--{{ 'ok' if project.status in ['active','completed'] else 'wait' }}"></span>{{ (project.status or 'Active') | replace('_',' ') | title }}</span>
+      <button class="button button--secondary" type="button" data-copy-url>Copy project link</button>
+    </div>
+  </header>
+
+  <nav class="phase-rail" aria-label="SDLC progress">
+    {% set phases = [('plan','Plan'), ('implement','Implement'), ('test','Test'), ('review','Review'), ('release','Release / Support')] %}
+    {% set phase_order = {'plan': 1, 'implement': 2, 'test': 3, 'review': 4, 'release': 5, 'support': 5, 'complete': 6} %}
+    {% for key, label in phases %}
+    <div class="phase-step {{ 'is-complete' if phase_order.get(current_phase, 1) > loop.index else 'is-active' if current_phase == key or (key == 'release' and current_phase in ['support','complete']) else '' }}" {% if current_phase == key or (key == 'release' and current_phase in ['support','complete']) %}aria-current="step"{% endif %}>
+      <span>{{ '✓' if phase_order.get(current_phase, 1) > loop.index else loop.index }}</span>
+      <div><strong>{{ label }}</strong><small>{{ ['Scope and design','Build the solution','Validate quality','Independent check','Release and improve'][loop.index0] }}</small></div>
+    </div>
+    {% endfor %}
+  </nav>
+
+  <section class="stage-command" aria-label="Stage controls">
+    <div>
+      <span class="stage-command-label">Current responsibility</span>
+      <strong>{{ (project.active_team or (current_phase | title ~ ' team')) }}</strong>
+      <small>{{ project.next_action or 'The coordinator will select the next approved task.' }}</small>
+    </div>
+    <form method="post" action="/projects/{{ project.id }}/run-next-stage">
+      {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+      <button class="button button--dark" type="submit" {% if run_blocked %}disabled aria-describedby="stage-blocked-reason"{% endif %}>Run next stage <span aria-hidden="true">→</span></button>
+      {% if run_blocked %}<small id="stage-blocked-reason">{{ 'This SDLC run is complete.' if project.status == 'completed' else 'Complete the approval gate first.' }}</small>{% endif %}
+    </form>
+  </section>
+
+  <section class="observability-grid" {% if run_id %}data-live-run="{{ run_id }}"{% endif %} aria-label="Agent run observability">
+    <article class="observability-card">
+      <p class="eyebrow">Model usage</p><h2>Tokens and cost</h2>
+      <div class="usage-metrics"><div><span>Input</span><strong data-usage="prompt">{{ usage.prompt_tokens or 0 }}</strong></div><div><span>Output</span><strong data-usage="completion">{{ usage.completion_tokens or 0 }}</strong></div><div><span>Estimated cost</span><strong data-usage="cost">{% if usage.estimated_cost_usd is not none %}${{ '%.4f'|format(usage.estimated_cost_usd or 0) }}{% else %}Not priced{% endif %}</strong></div></div>
+      <small data-usage="model">{% if usage.models %}{{ usage.models[-1].provider }} · {{ usage.models[-1].model }}{% else %}No model call recorded yet{% endif %}</small>
+    </article>
+    <article class="observability-card">
+      <p class="eyebrow">Live coordination</p><h2>Agent handoff</h2>
+      <p class="coordination-line" data-coordination="relationship">{{ coordination.relationship }}</p>
+      <div class="coordination-metrics"><span><b data-coordination="working">{{ coordination.working }}</b> working</span><span><b data-coordination="queued">{{ coordination.queued }}</b> queued</span><span><b data-coordination="completed">{{ coordination.completed }}</b> complete</span></div>
+      <small>Now: <strong data-coordination="current">{{ coordination.current }}</strong> · Next: <strong data-coordination="next">{{ coordination.next }}</strong></small>
+    </article>
+  </section>
+
+  <div class="control-grid">
+    <div class="control-main">
+      {% if approval_gate %}
+      <section class="approval-banner" aria-labelledby="approval-title">
+        <div class="approval-icon" aria-hidden="true">!</div>
+        <div><p class="eyebrow">Human approval required</p><h2 id="approval-title">{{ approval_gate.title or 'Review the agent plan' }}</h2><p>{{ approval_gate.description or 'Confirm the proposed scope before implementation begins.' }}</p></div>
+        <div class="approval-actions">
+          <form method="post" action="/projects/{{ project.id }}/approve">{% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}<input type="hidden" name="gate" value="{{ approval_gate.id or 'plan' }}"><button class="button button--primary" type="submit">Approve and continue</button></form>
+          <button class="button button--secondary" type="button" data-dialog-open="revision-dialog">Request changes</button>
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div><p class="eyebrow">Current stage</p><h2>{{ (current_phase or 'plan') | title }} workspace</h2></div>
+          <span class="live-indicator"><i></i>{{ 'Agents working' if project.status == 'running' else 'Ready' }}</span>
+        </div>
+        {% if current_phase == 'plan' %}
+        <div class="deliverable-content">
+          <h3>Proposed delivery plan</h3>
+          {% if plan %}<div class="rich-content">{{ plan | safe }}</div>{% else %}<p class="muted">The Planning and Architecture agents are preparing scope, risks and acceptance criteria.</p>{% endif %}
+        </div>
+        {% elif current_phase == 'implement' %}
+        <div class="metric-row"><div><span>Tasks completed</span><strong>{{ implementation.completed or 0 }}/{{ implementation.total or 0 }}</strong></div><div><span>Files changed</span><strong>{{ implementation.files_changed or 0 }}</strong></div><div><span>Current branch</span><strong class="mono">{{ implementation.branch or 'pending' }}</strong></div></div>
+        {% set developer_evidence = implementation_artifact | default({}) %}
+        {% set implementation_changes = implementation.changes | default([]) or implementation.proposed_files | default([]) or developer_evidence.changes | default([]) or developer_evidence.proposed_files | default([]) %}
+        {% if implementation_changes %}<ul class="file-list">{% for change in implementation_changes %}{% set change_is_text = change is string %}<li><span class="change-type change-type--{{ (change.type | default('modified')) | lower }}">{{ ((change.type | default('modified'))[:1]) | upper }}</span><code>{{ change if change_is_text else (change.path | default(change.name | default('Recorded change'))) }}</code><small>{{ developer_evidence.note | default(implementation.note | default('Implementation artifact recorded by the Developer Agent.')) if change_is_text else change.summary | default(change.description | default('Implementation artifact recorded.')) }}</small></li>{% endfor %}</ul>{% else %}<div class="panel-empty">No code changes have been recorded yet.</div>{% endif %}
+        {% elif current_phase == 'test' %}
+        <div class="check-grid">
+          {% set validation_evidence = test_artifact | default(validation | default({})) %}
+          {% set rendered_checks = test_results | default([]) or validation_evidence.checks | default([]) %}
+          {% for check in rendered_checks %}{% set check_is_text = check is string %}{% set check_status = validation_evidence.result | default('pending') if check_is_text else check.status | default(validation_evidence.result | default('pending')) %}<article class="check-card check-card--{{ check_status }}"><span class="check-icon">{{ '✓' if check_status == 'passed' else '!' if check_status == 'failed' else '…' }}</span><div><strong>{{ check | title if check_is_text else check.name | default('Validation check') }}</strong><small>{{ validation_evidence.evidence | default('Evidence recorded by the Testing Agent.') if check_is_text else check.details | default(check.evidence | default('Evidence recorded by the Testing Agent.')) }}</small></div></article>{% else %}<div class="panel-empty">Validation has not started yet.</div>{% endfor %}
+        </div>
+        {% elif current_phase in ['review', 'release', 'support', 'complete'] %}
+        <div class="review-summary">
+          <div class="review-score"><strong>{{ review.score or '—' }}</strong><small>Quality score</small></div>
+          <div><h3>{{ review.title or 'Independent review' }}</h3><p>{{ review.summary or 'The Review Agent will compare the implementation with the approved requirements.' }}</p></div>
+        </div>
+        {% if review.findings %}<ul class="finding-list">{% for finding in review.findings %}<li class="finding finding--{{ finding.severity }}"><span>{{ finding.severity | upper }}</span><div><strong>{{ finding.title }}</strong><p>{{ finding.details }}</p></div></li>{% endfor %}</ul>{% endif %}
+        {% endif %}
+      </section>
+
+      <section class="panel" id="deliverables">
+        <div class="panel-heading"><div><p class="eyebrow">Artifacts</p><h2>Deliverables</h2></div><span class="count-badge">{{ deliverables | length if deliverables else 0 }}</span></div>
+        {% if deliverables %}<div class="deliverable-list">{% for item in deliverables %}<a href="{{ item.url or '#' }}"><span class="document-icon" aria-hidden="true"></span><div><strong>{{ item.name }}</strong><small>{{ item.type or 'Document' }} · {{ item.updated_at or 'Recently updated' }}</small></div><span aria-hidden="true">→</span></a>{% endfor %}</div>{% else %}<div class="panel-empty">Agent outputs will appear here as each stage completes.</div>{% endif %}
+      </section>
+
+      <section class="panel" id="support">
+        <div class="panel-heading"><div><p class="eyebrow">Continuous improvement</p><h2>Defects and support</h2></div><button class="button button--small button--secondary" type="button" data-dialog-open="defect-dialog">Report defect</button></div>
+        {% if defects %}<div class="defect-list">{% for defect in defects %}<article><span class="severity severity--{{ defect.severity }}">{{ defect.severity | title }}</span><div><strong>{{ defect.title }}</strong><small>{{ defect.status | replace('_',' ') | title }} · {{ defect.created_at }}</small></div></article>{% endfor %}</div>{% else %}<div class="panel-empty panel-empty--compact">No defects reported. Production issues will trigger root-cause analysis and a regression test.</div>{% endif %}
+      </section>
+
+      {% if release_gate %}
+      <section class="release-gate">
+        <div class="approval-icon" aria-hidden="true">✓</div>
+        <div><p class="eyebrow">Final human gate</p><h2>Release approval</h2><p>Review validation evidence and findings before authorizing the DevOps Team to prepare the release.</p></div>
+        <form method="post" action="/projects/{{ project.id }}/approve-release">{% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}<button class="button button--primary" type="submit" {% if review and review.blocked %}disabled{% endif %}>Approve release</button></form>
+      </section>
+      {% endif %}
+    </div>
+
+    <aside class="control-sidebar">
+      <section class="panel team-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Agent organization</p><h2>Your delivery team</h2></div></div>
+        <div class="agent-list">
+          {% for agent in agents or [] %}
+          <article class="agent-card {{ 'is-active' if agent.status == 'working' else '' }}">
+            <span class="agent-avatar agent-avatar--{{ agent.role | lower | replace(' ','-') }}">{{ agent.icon or agent.name[:1] }}</span>
+            <div><strong>{{ agent.name }}</strong><small>{{ agent.role }}</small><span class="agent-task">{{ agent.current_task or ('Waiting for ' ~ (current_phase | title)) }}</span></div>
+            <span class="agent-status">{{ agent.status | title }}</span>
+          </article>
+          {% else %}
+          {% for name, role, icon in [('Orchestrator','Coordinator','O'),('Product Analyst','Requirements','P'),('Solution Architect','Architecture','A'),('Developer Team','Implementation','D'),('Quality Team','Testing','Q'),('Review Team','Independent review','R'),('DevOps Team','Delivery','∞'),('Support Team','Improvement','S')] %}
+          <article class="agent-card"><span class="agent-avatar">{{ icon }}</span><div><strong>{{ name }}</strong><small>{{ role }}</small><span class="agent-task">Ready</span></div><span class="agent-status">Idle</span></article>
+          {% endfor %}
+          {% endfor %}
+        </div>
+      </section>
+
+      <section class="panel activity-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Audit trail</p><h2>Team activity</h2></div></div>
+        <ol class="activity-list">
+          {% for event in activities or [] %}<li><span class="activity-marker activity-marker--{{ event.kind or 'info' }}"></span><div><strong>{{ event.actor }}</strong><p>{{ event.message }}</p><time>{{ event.created_at }}</time></div></li>{% else %}<li><span class="activity-marker"></span><div><strong>Project created</strong><p>The workspace is ready for planning.</p><time>Just now</time></div></li>{% endfor %}
+        </ol>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<dialog id="revision-dialog" class="modal">
+  <form method="post" action="/projects/{{ project.id }}/request-changes">
+    {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+    <div class="modal-heading"><div><p class="eyebrow">Approval gate</p><h2>Request plan changes</h2></div><button type="button" class="modal-close" data-dialog-close aria-label="Close">×</button></div>
+    <label class="field"><span>What should the team revise?</span><textarea name="feedback" rows="6" required placeholder="Be specific about scope, architecture, risks or acceptance criteria."></textarea></label>
+    <div class="modal-actions"><button class="button button--secondary" type="button" data-dialog-close>Cancel</button><button class="button button--primary" type="submit">Send to Planning Agent</button></div>
+  </form>
+</dialog>
+<dialog id="defect-dialog" class="modal">
+  <form method="post" action="/projects/{{ project.id }}/defects">
+    {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+    <div class="modal-heading"><div><p class="eyebrow">Support loop</p><h2>Report a defect</h2></div><button type="button" class="modal-close" data-dialog-close aria-label="Close">×</button></div>
+    <label class="field"><span>Defect title</span><input name="title" required></label>
+    <label class="field"><span>What happened?</span><textarea name="description" rows="5" required></textarea></label>
+    <label class="field"><span>Severity</span><select name="severity"><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
+    <div class="modal-actions"><button class="button button--secondary" type="button" data-dialog-close>Cancel</button><button class="button button--primary" type="submit">Create support task</button></div>
+  </form>
+</dialog>
+{% endblock %}

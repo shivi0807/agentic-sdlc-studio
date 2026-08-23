@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Sign in · Agentic SDLC Studio{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block content %}
+<section class="auth-shell">
+  <div class="auth-story">
+    <a class="brand brand--large" href="/" aria-label="Agentic SDLC Studio">
+      <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+      <span><strong>Agentic</strong><small>SDLC Studio</small></span>
+    </a>
+    <div class="auth-message">
+      <p class="eyebrow">Human-governed software delivery</p>
+      <h1>Turn an idea into reviewed software with an AI team.</h1>
+      <p>Plan, implement, test and review in one transparent workspace—with approval gates at every important decision.</p>
+    </div>
+    <div class="mini-flow" aria-label="Workflow: plan, implement, test and review">
+      <span>Plan</span><i></i><span>Implement</span><i></i><span>Test</span><i></i><span>Review</span>
+    </div>
+  </div>
+  <div class="auth-form-column">
+    <form class="auth-card" method="post" action="/login" novalidate>
+      {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+      <div>
+        <p class="eyebrow">Welcome back</p>
+        <h2>Sign in to your workspace</h2>
+        <p class="muted">Manage projects and coordinate your agent teams.</p>
+      </div>
+      {% if error %}<div class="form-alert" role="alert">{{ error }}</div>{% endif %}
+      <div class="demo-credentials" aria-label="Local demonstration credentials">
+        <div><span class="status-dot status-dot--ok"></span><strong>Local demo account</strong></div>
+        <dl><dt>Email</dt><dd><code>developer@demo.local</code></dd><dt>Password</dt><dd><code>DemoOnly!2026</code></dd></dl>
+      </div>
+      <label class="field">
+        <span>Email address</span>
+        <input type="email" name="email" value="{{ email or '' }}" autocomplete="email" placeholder="you@example.com" required>
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <span class="password-wrap">
+          <input id="password" type="password" name="password" autocomplete="current-password" required>
+          <button class="password-toggle" type="button" data-password-toggle="password" aria-label="Show password">Show</button>
+        </span>
+      </label>
+      <button class="button button--primary button--full" type="submit">Sign in</button>
+      <p class="auth-note"><span class="status-dot status-dot--ok"></span>Runs locally. Your source code stays on your machine.</p>
+    </form>
+  </div>
+</section>
+{% endblock %}
