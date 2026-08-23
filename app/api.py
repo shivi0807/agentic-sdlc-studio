@@ -29,7 +29,7 @@ def health() -> dict[str, str]:
 @router.post("/auth/demo")
 def demo_login(request: Request, response: Response) -> dict[str, Any]:
     settings = request.app.state.settings
-    if not settings.demo_auth_enabled:
+    if not settings.demo_auth_enabled or settings.auth_mode != "demo":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     repository = _repository(request)
     user = repository.ensure_demo_user()

@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 from .auth import SESSION_COOKIE
 from .domain import RunStatus, SDLCStyle
+from .google_auth import GoogleOAuthClient, GoogleOAuthError
 from .orchestrator import SDLCOrchestrator, WorkflowError
 from .repositories import StudioRepository
 from .schemas import ProjectCreate
@@ -21,6 +22,7 @@ router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 DEMO_PASSWORD = "DemoOnly!2026"  # noqa: S105 - intentionally public local demo credential
 CSRF_COOKIE = "sdlc_csrf"
+GOOGLE_OAUTH_COOKIE = "sdlc_google_oauth"
 
 
 def _repository(request: Request) -> StudioRepository:
@@ -29,6 +31,15 @@ def _repository(request: Request) -> StudioRepository:
 
 def _orchestrator(request: Request) -> SDLCOrchestrator:
     return request.app.state.orchestrator  # type: ignore[no-any-return]
+
+
+def _google_client(request: Request) -> GoogleOAuthClient:
+    settings = request.app.state.settings
+    return GoogleOAuthClient(
+        client_id=settings.google_oauth_client_id,
+        client_secret=settings.google_oauth_client_secret,
+        redirect_uri=settings.google_oauth_redirect_uri,
+    )
 
 
 def _user_or_none(request: Request) -> dict[str, Any] | None:
@@ -70,7 +81,11 @@ def login_page(request: Request) -> Response:
     return templates.TemplateResponse(
         request,
         "login.html",
-        {"current_user": None, "csrf_token": csrf_for(request)},
+        {
+            "current_user": None,
+            "csrf_token": csrf_for(request),
+            "auth_mode": request.app.state.settings.auth_mode,
+        },
     )
 
 
@@ -83,7 +98,7 @@ def login(
 ) -> Response:
     _validate_csrf(request, csrf_token)
     settings = request.app.state.settings
-    if not settings.demo_auth_enabled:
+    if not settings.demo_auth_enabled or settings.auth_mode != "demo":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     if email.lower().strip() != "developer@demo.local" or password != DEMO_PASSWORD:
         return templates.TemplateResponse(
@@ -94,6 +109,7 @@ def login(
                 "email": email,
                 "error": "Use the local demo credentials.",
                 "csrf_token": csrf_for(request),
+                "auth_mode": settings.auth_mode,
             },
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
@@ -110,6 +126,63 @@ def login(
         samesite="lax",
         path="/",
     )
+    return response
+
+
+@router.get("/auth/google/start")
+def google_login_start(request: Request) -> RedirectResponse:
+    settings = request.app.state.settings
+    if settings.auth_mode != "google":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    state = secrets.token_urlsafe(32)
+    nonce = secrets.token_urlsafe(32)
+    response = RedirectResponse(
+        _google_client(request).authorization_url(state, nonce),
+        status_code=status.HTTP_303_SEE_OTHER,
+    )
+    response.set_cookie(
+        GOOGLE_OAUTH_COOKIE,
+        f"{state}.{nonce}",
+        max_age=10 * 60,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
+@router.get("/auth/google/callback")
+def google_login_callback(request: Request, code: str, state: str) -> RedirectResponse:
+    settings = request.app.state.settings
+    expected = request.cookies.get(GOOGLE_OAUTH_COOKIE, "")
+    expected_state, separator, nonce = expected.partition(".")
+    if (
+        settings.auth_mode != "google"
+        or not separator
+        or not secrets.compare_digest(state, expected_state)
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid sign-in request")
+    try:
+        identity = _google_client(request).exchange_code(code, nonce)
+    except GoogleOAuthError as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Google sign-in failed"
+        ) from error
+    repository = _repository(request)
+    user = repository.ensure_user(identity.email.lower(), identity.display_name[:200])
+    token = repository.create_session(user["id"])
+    response = RedirectResponse("/projects", status_code=status.HTTP_303_SEE_OTHER)
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        max_age=12 * 60 * 60,
+        httponly=True,
+        secure=settings.cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+    response.delete_cookie(GOOGLE_OAUTH_COOKIE, path="/", samesite="lax")
     return response
 
 

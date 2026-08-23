@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.domain import AgentResult, AgentRole
+from app.firestore_repository import FirestoreStudioRepository
 from app.main import create_app
 from app.providers import AgentProvider, DeterministicAgentProvider
 
@@ -120,6 +121,69 @@ def test_project_input_rejects_unsafe_workspace_and_controls(tmp_path: Path) -> 
 def test_demo_auth_can_be_disabled(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path / "studio.db", demo_auth_enabled=False))
     with TestClient(app) as client:
+        assert client.post("/auth/demo").status_code == 404
+
+
+def test_firestore_run_presentation_summarizes_usage_without_leaking_storage_fields() -> None:
+    run = FirestoreStudioRepository._present_run(  # noqa: SLF001 - pure adapter contract test
+        {
+            "id": "run-1",
+            "project_id": "project-1",
+            "tasks": [],
+            "defects": [],
+            "usage": [
+                {
+                    "provider": "gemini",
+                    "model": "gemini-2.5-flash-lite",
+                    "prompt_tokens": 100,
+                    "completion_tokens": 25,
+                    "estimated_cost_usd": 0.001,
+                },
+                {
+                    "provider": "gemini",
+                    "model": "gemini-2.5-flash-lite",
+                    "prompt_tokens": 50,
+                    "completion_tokens": 10,
+                    "estimated_cost_usd": 0.002,
+                },
+            ],
+        }
+    )
+
+    assert "usage" not in run
+    assert run["usage_summary"] == {
+        "prompt_tokens": 150,
+        "completion_tokens": 35,
+        "estimated_cost_usd": 0.003,
+        "models": [
+            {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
+            {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
+        ],
+    }
+
+
+def test_google_sign_in_start_uses_state_and_keeps_demo_api_disabled(tmp_path: Path) -> None:
+    cloud_settings = Settings(
+        database_path=tmp_path / "studio.db",
+        demo_auth_enabled=False,
+        cookie_secure=True,
+        agent_provider="deterministic",
+        ollama_url="http://127.0.0.1:11434",
+        ollama_model="qwen2.5-coder:3b",
+        workspace_root=tmp_path / "workspaces",
+        auth_mode="google",
+        google_oauth_client_id="test-client.apps.googleusercontent.com",
+        google_oauth_client_secret="test-secret",  # noqa: S106 - non-secret test value
+        google_oauth_redirect_uri="https://studio.example/auth/google/callback",
+    )
+    app = create_app(cloud_settings)
+    with TestClient(app) as client:
+        response = client.get("/auth/google/start", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(
+            "https://accounts.google.com/o/oauth2/v2/auth?"
+        )
+        assert "sdlc_google_oauth" in response.headers["set-cookie"]
         assert client.post("/auth/demo").status_code == 404
 
 

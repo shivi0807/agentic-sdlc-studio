@@ -1,6 +1,6 @@
 # Google Cloud deployment guide
 
-This is an optional future deployment plan. It does not authorize deployment,
+This is a production-readiness plan. It does not by itself authorize deployment,
 billing changes, IAM changes, or resource creation.
 
 ## Cost statement
@@ -23,14 +23,39 @@ Before deployment:
 - Keep minimum instances at `0`, maximum instances at `1`, and conservative CPU,
   memory, concurrency, timeout, and logging settings.
 
-## Blocking architecture decisions
+## Authentication and public access
+
+Public visitors may view only explicitly shared project output. Project creation,
+agent execution, approvals, and support actions require a verified Google sign-in.
+The application supports `AUTH_MODE=google` with a Google OAuth **Web application**
+client. Configure its authorized redirect URI to:
+
+```text
+https://YOUR-CLOUD-RUN-DOMAIN/auth/google/callback
+```
+
+Store `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`, and
+`GEMINI_API_KEY` only in Secret Manager. Never put them in GitHub, an image,
+or a plain Cloud Run environment variable. Production startup refuses local
+demo authentication and requires Google sign-in configuration.
+
+## Durable cloud storage
 
 The local SQLite database and local Git workspaces are not durable on Cloud Run.
 The container filesystem is ephemeral and may disappear whenever an instance is
 replaced, as documented in the
 [Cloud Run runtime overview](https://cloud.google.com/run/docs/overview/what-is-cloud-run).
-Implement and test durable repository/workspace adapters before calling this a
-production deployment.
+The application selects Firestore for users, sessions, projects, runs, audit
+events, approvals, defects, and usage records when
+`PERSISTENCE_BACKEND=firestore`. It selects the private Cloud Storage workspace
+adapter when `WORKSPACE_BACKEND=gcs`. Cloud Run uses Application Default
+Credentials from its runtime service account; no service-account key is needed.
+
+Externally generated code is still never executed inside the web process. A
+Gemini run can plan and implement, but its Test stage deliberately reports
+`isolated_worker_required` until a separately reviewed, isolated validation
+worker exists. Do not describe a Gemini run as a complete tested release before
+that boundary is implemented.
 
 Cloud Run cannot reach Ollama running at `localhost` on a developer laptop.
 Inside Cloud Run, `localhost` is the container. Hosting Ollama or another LLM in
@@ -38,7 +63,7 @@ Google Cloud generally requires continuously billed compute and often a GPU, so
 it is not part of the zero-cost target.
 
 For a limited demonstration, use deterministic mode or the implemented Gemini
-Developer API provider with a free-tier API key and strict usage monitoring.
+Developer API provider with prepaid credit and strict usage monitoring.
 Google's free tier can change without notice, and free-tier prompts may be used
 to improve Google products. Do not submit confidential requirements. Hosting an
 open model on Google Cloud is not treated as a zero-cost design.
@@ -50,8 +75,9 @@ Public HTTPS
     |
 Cloud Run (min 0, max 1, non-root container)
     |-- Secret Manager references
-    |-- durable repository adapter (required)
-    `-- Gemini free-tier API (optional) or deterministic provider
+    |-- Google OAuth sign-in for creators
+    |-- Firestore and private Cloud Storage adapters
+    `-- Gemini Developer API (optional) or deterministic provider
 ```
 
 Use a dedicated least-privilege service account. Do not use owner/editor roles
@@ -63,8 +89,10 @@ route.
 
 The script in `deploy/google-cloud/deploy-cloud-run.ps1` expects an already-built
 container image. It intentionally does not create projects, billing accounts,
-IAM policies, databases, authentication configuration, or secrets. It is blocked
-by default until production authentication and durable storage are implemented.
+IAM policies, databases, authentication configuration, or secrets. It requires
+an explicit readiness switch and confirmation. The deployment references the
+existing `gemini-api-key`, `google-oauth-client-id`, and
+`google-oauth-client-secret` secrets without printing their payloads.
 
 After human approval and manual prerequisites:
 
@@ -74,6 +102,8 @@ After human approval and manual prerequisites:
   -Region "us-central1" `
   -Image "us-central1-docker.pkg.dev/YOUR_PROJECT/agentic-sdlc/app:TAG" `
   -RuntimeServiceAccount "agentic-sdlc-runtime@YOUR_PROJECT.iam.gserviceaccount.com" `
+  -WorkspaceBucket "YOUR_PRIVATE_BUCKET" `
+  -OAuthRedirectUri "https://YOUR-CLOUD-RUN-DOMAIN/auth/google/callback" `
   -ProductionReadinessApproved
 ```
 
