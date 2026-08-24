@@ -19,7 +19,6 @@
   </div>
   <div class="auth-form-column">
     <section class="auth-card">
-      {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
       <div>
         <p class="eyebrow">Welcome back</p>
         <h2>Sign in to your workspace</h2>
@@ -31,6 +30,7 @@
       <p class="auth-note"><span class="status-dot status-dot--ok"></span>Google sign-in protects project creation and agent runs.</p>
       {% else %}
       <form method="post" action="/login" novalidate>
+      {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
       <div class="demo-credentials" aria-label="Local demonstration credentials">
         <div><span class="status-dot status-dot--ok"></span><strong>Local demo account</strong></div>
         <dl><dt>Email</dt><dd><code>developer@demo.local</code></dd><dt>Password</dt><dd><code>DemoOnly!2026</code></dd></dl>

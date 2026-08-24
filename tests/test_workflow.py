@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -190,7 +191,12 @@ def test_google_sign_in_start_uses_state_and_keeps_demo_api_disabled(tmp_path: P
 def test_html_demo_flow_renders_control_room(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path / "studio.db"))
     with TestClient(app) as client:
-        client.get("/login")
+        login_page = client.get("/login")
+        assert re.search(
+            r'<form method="post" action="/login"[^>]*>.*name="csrf_token"',
+            login_page.text,
+            re.DOTALL,
+        )
         csrf_token = client.cookies["sdlc_csrf"]
         login = client.post(
             "/login",
