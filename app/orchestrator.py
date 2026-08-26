@@ -215,8 +215,7 @@ class SDLCOrchestrator:
         if not passed:
             refreshed = self._run(run_id, owner_id)
             stage_failures = sum(
-                task["agent_role"] == role.value
-                and task["status"] == "failed"
+                task["agent_role"] == role.value and task["status"] == "failed"
                 for task in refreshed["tasks"]
             )
             failure_limit = (

@@ -488,14 +488,16 @@ def _project_context(
         }
     run_status = run["status"] if run else RunStatus.PLANNING.value
     has_queued_task = bool(run and any(task["status"] == "queued" for task in run["tasks"]))
-    review_retry_blocked = (
-        run_status == RunStatus.CHANGES_REQUESTED.value and not has_queued_task
+    review_retry_blocked = run_status == RunStatus.CHANGES_REQUESTED.value and not has_queued_task
+    run_blocked = (
+        run_status
+        in {
+            RunStatus.AWAITING_PLAN_APPROVAL.value,
+            RunStatus.AWAITING_RELEASE_APPROVAL.value,
+            RunStatus.COMPLETED.value,
+        }
+        or review_retry_blocked
     )
-    run_blocked = run_status in {
-        RunStatus.AWAITING_PLAN_APPROVAL.value,
-        RunStatus.AWAITING_RELEASE_APPROVAL.value,
-        RunStatus.COMPLETED.value,
-    } or review_retry_blocked
     review_artifact: dict[str, Any] = (
         next((artifact for task, artifact in parsed if task["agent_role"] == "reviewer"), {}) or {}
     )
