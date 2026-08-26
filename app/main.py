@@ -11,8 +11,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .api import router
 from .auth import SESSION_COOKIE
+from .cloud_workspaces import CloudStorageWorkspaceEngine
 from .config import Settings
 from .database import Database
+from .firestore_repository import FirestoreStudioRepository
 from .orchestrator import SDLCOrchestrator
 from .providers import build_provider
 from .repositories import StudioRepository
@@ -23,9 +25,21 @@ from .workspaces import WorkspaceEngine
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved = settings or Settings.from_env()
-    database = Database(resolved.database_path)
-    repository = StudioRepository(database)
-    workspace_engine = WorkspaceEngine(resolved.workspace_root)
+    database: Database | None = None
+    if resolved.persistence_backend == "firestore":
+        repository: StudioRepository = FirestoreStudioRepository(resolved.firestore_project_id)
+    else:
+        database = Database(resolved.database_path)
+        repository = StudioRepository(database)
+    workspace_engine = (
+        CloudStorageWorkspaceEngine(
+            resolved.workspace_root,
+            resolved.cloud_storage_bucket,
+            resolved.firestore_project_id,
+        )
+        if resolved.workspace_backend == "gcs"
+        else WorkspaceEngine(resolved.workspace_root)
+    )
     provider = build_provider(
         resolved.agent_provider,
         resolved.ollama_url,
@@ -36,7 +50,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        database.initialize()
+        if database is not None:
+            database.initialize()
         yield
 
     application = FastAPI(

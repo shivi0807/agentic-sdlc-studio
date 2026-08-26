@@ -20,23 +20,24 @@ class StudioRepository:
         self.database = database
 
     def ensure_demo_user(self) -> dict[str, Any]:
+        return self.ensure_user("developer@demo.local", "Demo Developer")
+
+    def ensure_user(self, email: str, display_name: str) -> dict[str, Any]:
         with self.database.connect() as connection:
-            row = connection.execute(
-                "SELECT * FROM users WHERE email = ?", ("developer@demo.local",)
-            ).fetchone()
+            row = connection.execute("SELECT * FROM users WHERE email = ?", (email,)).fetchone()
             if row:
                 return dict(row)
             user_id = str(uuid4())
             now = utc_now()
             connection.execute(
                 "INSERT INTO users(id,email,display_name,created_at) VALUES(?,?,?,?)",
-                (user_id, "developer@demo.local", "Demo Developer", now),
+                (user_id, email, display_name, now),
             )
             connection.commit()
             return {
                 "id": user_id,
-                "email": "developer@demo.local",
-                "display_name": "Demo Developer",
+                "email": email,
+                "display_name": display_name,
                 "created_at": now,
             }
 

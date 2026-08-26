@@ -17,6 +17,14 @@ param(
     [string]$RuntimeServiceAccount,
 
     [Parameter(Mandatory = $true)]
+    [ValidatePattern("^[a-z0-9][a-z0-9._-]{2,62}$")]
+    [string]$WorkspaceBucket,
+
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern("^https://[^/]+/auth/google/callback$")]
+    [string]$OAuthRedirectUri,
+
+    [Parameter(Mandatory = $true)]
     [switch]$ProductionReadinessApproved,
 
     [string]$ServiceName = "agentic-sdlc-studio"
@@ -49,7 +57,8 @@ $arguments = @(
     "--cpu-throttling",
     "--execution-environment", "gen2",
     "--allow-unauthenticated",
-    "--set-env-vars", "APP_ENV=production,PORT=8080,LOG_LEVEL=INFO,DEMO_AUTH_ENABLED=false,AGENT_PROVIDER=deterministic"
+    "--set-env-vars", "APP_ENV=production,PORT=8080,LOG_LEVEL=INFO,DEMO_AUTH_ENABLED=false,AUTH_MODE=google,PERSISTENCE_BACKEND=firestore,FIRESTORE_PROJECT_ID=$ProjectId,WORKSPACE_BACKEND=gcs,CLOUD_STORAGE_BUCKET=$WorkspaceBucket,AGENT_PROVIDER=gemini,GEMINI_MODEL=gemini-2.5-flash-lite,GOOGLE_OAUTH_REDIRECT_URI=$OAuthRedirectUri",
+    "--set-secrets", "GEMINI_API_KEY=gemini-api-key:latest,GOOGLE_OAUTH_CLIENT_ID=google-oauth-client-id:latest,GOOGLE_OAUTH_CLIENT_SECRET=google-oauth-client-secret:latest"
 )
 
 $displayCommand = "gcloud " + ($arguments -join " ")

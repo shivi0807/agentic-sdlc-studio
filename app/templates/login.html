@@ -18,14 +18,19 @@
     </div>
   </div>
   <div class="auth-form-column">
-    <form class="auth-card" method="post" action="/login" novalidate>
-      {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+    <section class="auth-card">
       <div>
         <p class="eyebrow">Welcome back</p>
         <h2>Sign in to your workspace</h2>
         <p class="muted">Manage projects and coordinate your agent teams.</p>
       </div>
       {% if error %}<div class="form-alert" role="alert">{{ error }}</div>{% endif %}
+      {% if auth_mode == 'google' %}
+      <a class="button button--primary button--full" href="/auth/google/start">Continue with Google</a>
+      <p class="auth-note"><span class="status-dot status-dot--ok"></span>Google sign-in protects project creation and agent runs.</p>
+      {% else %}
+      <form method="post" action="/login" novalidate>
+      {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
       <div class="demo-credentials" aria-label="Local demonstration credentials">
         <div><span class="status-dot status-dot--ok"></span><strong>Local demo account</strong></div>
         <dl><dt>Email</dt><dd><code>developer@demo.local</code></dd><dt>Password</dt><dd><code>DemoOnly!2026</code></dd></dl>
@@ -43,7 +48,9 @@
       </label>
       <button class="button button--primary button--full" type="submit">Sign in</button>
       <p class="auth-note"><span class="status-dot status-dot--ok"></span>Runs locally. Your source code stays on your machine.</p>
-    </form>
+      </form>
+      {% endif %}
+    </section>
   </div>
 </section>
 {% endblock %}

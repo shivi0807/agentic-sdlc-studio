@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock
@@ -5,9 +6,11 @@ from unittest.mock import Mock
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.domain import AgentResult, AgentRole
+from app.domain import AgentResult, AgentRole, SDLCStyle
+from app.firestore_repository import FirestoreStudioRepository
 from app.main import create_app
 from app.providers import AgentProvider, DeterministicAgentProvider
+from app.schemas import ProjectCreate
 
 
 def settings(path: Path, demo_auth_enabled: bool = True) -> Settings:
@@ -20,6 +23,15 @@ def settings(path: Path, demo_auth_enabled: bool = True) -> Settings:
         ollama_model="qwen2.5-coder:3b",
         workspace_root=path.parent / "workspaces",
     )
+
+
+def test_project_requirements_accept_windows_line_endings() -> None:
+    project = ProjectCreate(
+        name="Team Task Tracker",
+        requirement="Build a task tracker.\r\nInclude login and tests.",
+        sdlc_style=SDLCStyle.AGILE,
+    )
+    assert project.requirement == "Build a task tracker.\nInclude login and tests."
 
 
 def test_complete_human_governed_sdlc(tmp_path: Path) -> None:
@@ -123,10 +135,78 @@ def test_demo_auth_can_be_disabled(tmp_path: Path) -> None:
         assert client.post("/auth/demo").status_code == 404
 
 
+def test_firestore_run_presentation_summarizes_usage_without_leaking_storage_fields() -> None:
+    run = FirestoreStudioRepository._present_run(  # noqa: SLF001 - pure adapter contract test
+        {
+            "id": "run-1",
+            "project_id": "project-1",
+            "tasks": [],
+            "defects": [],
+            "usage": [
+                {
+                    "provider": "gemini",
+                    "model": "gemini-2.5-flash-lite",
+                    "prompt_tokens": 100,
+                    "completion_tokens": 25,
+                    "estimated_cost_usd": 0.001,
+                },
+                {
+                    "provider": "gemini",
+                    "model": "gemini-2.5-flash-lite",
+                    "prompt_tokens": 50,
+                    "completion_tokens": 10,
+                    "estimated_cost_usd": 0.002,
+                },
+            ],
+        }
+    )
+
+    assert "usage" not in run
+    assert run["usage_summary"] == {
+        "prompt_tokens": 150,
+        "completion_tokens": 35,
+        "estimated_cost_usd": 0.003,
+        "models": [
+            {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
+            {"provider": "gemini", "model": "gemini-2.5-flash-lite"},
+        ],
+    }
+
+
+def test_google_sign_in_start_uses_state_and_keeps_demo_api_disabled(tmp_path: Path) -> None:
+    cloud_settings = Settings(
+        database_path=tmp_path / "studio.db",
+        demo_auth_enabled=False,
+        cookie_secure=True,
+        agent_provider="deterministic",
+        ollama_url="http://127.0.0.1:11434",
+        ollama_model="qwen2.5-coder:3b",
+        workspace_root=tmp_path / "workspaces",
+        auth_mode="google",
+        google_oauth_client_id="test-client.apps.googleusercontent.com",
+        google_oauth_client_secret="test-secret",  # noqa: S106 - non-secret test value
+        google_oauth_redirect_uri="https://studio.example/auth/google/callback",
+    )
+    app = create_app(cloud_settings)
+    with TestClient(app) as client:
+        response = client.get("/auth/google/start", follow_redirects=False)
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(
+            "https://accounts.google.com/o/oauth2/v2/auth?"
+        )
+        assert "sdlc_google_oauth" in response.headers["set-cookie"]
+        assert client.post("/auth/demo").status_code == 404
+
+
 def test_html_demo_flow_renders_control_room(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path / "studio.db"))
     with TestClient(app) as client:
-        client.get("/login")
+        login_page = client.get("/login")
+        assert re.search(
+            r'<form method="post" action="/login"[^>]*>.*name="csrf_token"',
+            login_page.text,
+            re.DOTALL,
+        )
         csrf_token = client.cookies["sdlc_csrf"]
         login = client.post(
             "/login",
@@ -347,3 +427,10 @@ def test_real_test_failure_returns_work_to_developer_and_skips_review(tmp_path: 
             for task in run["tasks"]
         )
         assert run["defects"][-1]["title"] == "Automated validation failed"
+
+        # Two more failed validation cycles exhaust the bounded retry budget.
+        for _ in range(4):
+            run = client.post(f"/api/runs/{run['id']}/next").json()
+        assert run["status"] == "changes_requested"
+        assert run["current_agent"] is None
+        assert not any(task["status"] == "queued" for task in run["tasks"])
