@@ -143,12 +143,8 @@ def safe_provider_context(context: dict[str, Any]) -> dict[str, Any]:
     feedback_value = context.get("review_feedback")
     if isinstance(feedback_value, dict):
         safe["review_feedback"] = {
-            "summary": redact_sensitive_text(
-                str(feedback_value.get("summary", "")), 2_000
-            ),
-            "artifact": redact_sensitive_text(
-                str(feedback_value.get("artifact", "")), 6_000
-            ),
+            "summary": redact_sensitive_text(str(feedback_value.get("summary", "")), 2_000),
+            "artifact": redact_sensitive_text(str(feedback_value.get("artifact", "")), 6_000),
         }
     return safe
 
