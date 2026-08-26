@@ -6,10 +6,11 @@ from unittest.mock import Mock
 from fastapi.testclient import TestClient
 
 from app.config import Settings
-from app.domain import AgentResult, AgentRole
+from app.domain import AgentResult, AgentRole, SDLCStyle
 from app.firestore_repository import FirestoreStudioRepository
 from app.main import create_app
 from app.providers import AgentProvider, DeterministicAgentProvider
+from app.schemas import ProjectCreate
 
 
 def settings(path: Path, demo_auth_enabled: bool = True) -> Settings:
@@ -22,6 +23,15 @@ def settings(path: Path, demo_auth_enabled: bool = True) -> Settings:
         ollama_model="qwen2.5-coder:3b",
         workspace_root=path.parent / "workspaces",
     )
+
+
+def test_project_requirements_accept_windows_line_endings() -> None:
+    project = ProjectCreate(
+        name="Team Task Tracker",
+        requirement="Build a task tracker.\r\nInclude login and tests.",
+        sdlc_style=SDLCStyle.AGILE,
+    )
+    assert project.requirement == "Build a task tracker.\nInclude login and tests."
 
 
 def test_complete_human_governed_sdlc(tmp_path: Path) -> None:
@@ -417,3 +427,10 @@ def test_real_test_failure_returns_work_to_developer_and_skips_review(tmp_path: 
             for task in run["tasks"]
         )
         assert run["defects"][-1]["title"] == "Automated validation failed"
+
+        # Two more failed validation cycles exhaust the bounded retry budget.
+        for _ in range(4):
+            run = client.post(f"/api/runs/{run['id']}/next").json()
+        assert run["status"] == "changes_requested"
+        assert run["current_agent"] is None
+        assert not any(task["status"] == "queued" for task in run["tasks"])

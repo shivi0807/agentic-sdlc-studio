@@ -436,9 +436,12 @@ def _project_context(
     )
     deliverables = [
         {
+            "id": task["id"],
             "name": task["summary"],
             "type": task["agent_role"].title(),
+            "role": task["agent_role"],
             "updated_at": task["completed_at"],
+            "url": f"/projects/{project['id']}/deliverables/{task['id']}",
         }
         for task, _artifact in parsed
         if task["status"] == "completed"
@@ -484,11 +487,15 @@ def _project_context(
             "description": "Review Product and Architecture outputs before implementation.",
         }
     run_status = run["status"] if run else RunStatus.PLANNING.value
+    has_queued_task = bool(run and any(task["status"] == "queued" for task in run["tasks"]))
+    review_retry_blocked = (
+        run_status == RunStatus.CHANGES_REQUESTED.value and not has_queued_task
+    )
     run_blocked = run_status in {
         RunStatus.AWAITING_PLAN_APPROVAL.value,
         RunStatus.AWAITING_RELEASE_APPROVAL.value,
         RunStatus.COMPLETED.value,
-    }
+    } or review_retry_blocked
     review_artifact: dict[str, Any] = (
         next((artifact for task, artifact in parsed if task["agent_role"] == "reviewer"), {}) or {}
     )
@@ -497,6 +504,7 @@ def _project_context(
         "current_phase": phase,
         "approval_gate": approval_gate,
         "run_blocked": run_blocked,
+        "run_blocked_reason": "review_retry_exhausted" if review_retry_blocked else "approval",
         "release_gate": run_status == RunStatus.AWAITING_RELEASE_APPROVAL.value,
         "plan": plan,
         "implementation": {"completed": 0, "total": 1, "changes": []},
@@ -521,6 +529,34 @@ def _project_context(
             for event in reversed(events)
         ],
     }
+
+
+@router.get("/projects/{project_id}/deliverables/{task_id}", response_class=HTMLResponse)
+def deliverable_page(project_id: str, task_id: str, request: Request) -> Response:
+    user = _require_user(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    repository = _repository(request)
+    project = repository.get_project(project_id, user["id"])
+    run = repository.latest_run_for_project(project_id, user["id"])
+    if project is None or run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    task = next((item for item in run["tasks"] if item["id"] == task_id), None)
+    if task is None or task["status"] != "completed":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Deliverable not found")
+    try:
+        artifact = json.loads(task["artifact"] or "{}")
+    except json.JSONDecodeError:
+        artifact = {"content": task["artifact"]}
+    context = {
+        "request": request,
+        "current_user": user,
+        "csrf_token": csrf_for(request),
+        "project": _project_view(project, run),
+        "task": task,
+        "artifact": artifact,
+    }
+    return templates.TemplateResponse(request, "deliverable.html", context)
 
 
 def _phase(status_value: str) -> str:

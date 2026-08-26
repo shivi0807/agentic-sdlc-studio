@@ -10,6 +10,11 @@ from .domain import SDLCStyle
 
 
 def _reject_controls(value: str, allow_lines: bool = False) -> str:
+    # Browsers submit multiline textareas as CRLF on Windows. Normalize those
+    # line endings before checking controls so valid pasted requirements are
+    # not rejected for containing the carriage-return half of CRLF.
+    if allow_lines:
+        value = value.replace("\r\n", "\n").replace("\r", "\n")
     allowed = {"\n", "\t"} if allow_lines else set()
     if any(unicodedata.category(char) == "Cc" and char not in allowed for char in value):
         raise ValueError("control characters are not allowed")

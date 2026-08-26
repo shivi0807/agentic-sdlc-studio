@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ task.agent_role | title }} deliverable · Agentic SDLC Studio{% endblock %}
+{% block content %}
+<div class="page-shell page-shell--narrow">
+  <p class="eyebrow"><a href="/projects/{{ project.id }}">Project</a> / Deliverable</p>
+  <div class="page-heading">
+    <div><p class="eyebrow">{{ task.agent_role | title }} Agent</p><h1>{{ task.summary }}</h1><p class="muted">Completed {{ task.completed_at }}</p></div>
+    <a class="button button--secondary" href="/projects/{{ project.id }}#deliverables">Back to project</a>
+  </div>
+  <section class="panel">
+    <div class="panel-heading"><div><p class="eyebrow">Agent output</p><h2>Artifact details</h2></div><span class="status-badge status-badge--success">Passed</span></div>
+    <pre class="artifact-json">{{ artifact | tojson(indent=2) }}</pre>
+  </section>
+  <section class="panel">
+    <p class="eyebrow">Handoff</p>
+    {% if task.agent_role == 'developer' %}<p>This implementation artifact is the input workspace for the Tester Agent.</p>{% elif task.agent_role == 'tester' %}<p>This validation artifact is evidence supplied to the Reviewer Agent.</p>{% elif task.agent_role == 'reviewer' %}<p>This independent review evaluates the implementation and validation evidence.</p>{% else %}<p>This deliverable is recorded in the project audit trail for the next SDLC stage.</p>{% endif %}
+  </section>
+</div>
+{% endblock %}

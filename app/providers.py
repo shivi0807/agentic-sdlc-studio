@@ -1,23 +1,28 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import replace
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from .domain import AgentResult, AgentRole, ModelUsage
+
+logger = logging.getLogger(__name__)
 
 ROLE_INSTRUCTIONS: dict[AgentRole, str] = {
     AgentRole.COORDINATOR: "Coordinate dependencies, stage gates, ownership, and team handoffs.",
     AgentRole.PRODUCT: "Turn the idea into user stories, acceptance criteria, scope, and risks.",
     AgentRole.ARCHITECT: "Propose modular architecture, interfaces, security, and trade-offs.",
     AgentRole.DEVELOPER: (
-        "Produce the smallest Python standard-library implementation for the approved scope. "
-        "The artifact must include project_type='python-stdlib' and a files object mapping safe "
-        "relative paths to text, including focused unittest coverage."
+        "Produce the smallest implementation matching the approved scope and technology "
+        "requirements. Use project_type='python-fastapi' when the scope calls "
+        "for FastAPI/Jinja2, otherwise project_type='python-stdlib', plus a files object mapping "
+        "safe relative paths to text, including focused test coverage."
     ),
     AgentRole.TESTER: "Design validation and report evidence; never invent executed results.",
     AgentRole.REVIEWER: "Independently review requirements, security, quality, and test evidence.",
@@ -134,6 +139,16 @@ def safe_provider_context(context: dict[str, Any]) -> dict[str, Any]:
         safe["review_evidence"] = {
             "source_excerpts": sources,
             "validation": validation,
+        }
+    feedback_value = context.get("review_feedback")
+    if isinstance(feedback_value, dict):
+        safe["review_feedback"] = {
+            "summary": redact_sensitive_text(
+                str(feedback_value.get("summary", "")), 2_000
+            ),
+            "artifact": redact_sensitive_text(
+                str(feedback_value.get("artifact", "")), 6_000
+            ),
         }
     return safe
 
@@ -356,8 +371,20 @@ class GeminiAgentProvider(AgentProvider):
             data=payload,
             headers={"Content-Type": "application/json", "x-goog-api-key": self.api_key},
         )
-        with urlopen(request, timeout=120) as response:  # noqa: S310 - fixed origin
-            wrapper = json.loads(response.read().decode())
+        try:
+            with urlopen(request, timeout=120) as response:  # noqa: S310 - fixed origin
+                wrapper = json.loads(response.read().decode())
+        except HTTPError as error:
+            # Log Google's safe error envelope (never the API key) so Cloud Run
+            # diagnostics distinguish an invalid key from an unavailable model.
+            body = error.read().decode("utf-8", errors="replace")[:1_000]
+            logger.error(
+                "Gemini API request failed: status=%s reason=%s body=%s",
+                error.code,
+                error.reason,
+                body,
+            )
+            raise
         text = wrapper["candidates"][0]["content"]["parts"][0]["text"]
         result = validate_provider_result(json.loads(text))
         usage = wrapper.get("usageMetadata")

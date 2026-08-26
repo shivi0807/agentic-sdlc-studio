@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -25,7 +26,7 @@ class WorkspaceEngine:
     MAX_TOTAL_BYTES = 500_000
     MAX_OUTPUT_CHARS = 20_000
     VALIDATION_TIMEOUT_SECONDS = 30
-    SUPPORTED_PROJECT_TYPES = {"python-stdlib"}
+    SUPPORTED_PROJECT_TYPES = {"python-stdlib", "python-fastapi"}
     _SAFE_ID = re.compile(r"\A[a-zA-Z0-9_-]{1,100}\Z")
 
     def __init__(self, root: Path) -> None:
@@ -99,7 +100,7 @@ class WorkspaceEngine:
         recorded_type = self._project_type(workspace)
         if project_type is not None and project_type != recorded_type:
             raise WorkspaceError("project type does not match the materialized workspace")
-        if recorded_type != "python-stdlib":
+        if recorded_type not in self.SUPPORTED_PROJECT_TYPES:
             raise WorkspaceError("unsupported generated project type")
 
         commands = [
@@ -113,6 +114,47 @@ class WorkspaceEngine:
             "passed": all(check["passed"] for check in checks),
             "checks": checks,
             "note": "Commands are selected by the application allow-list, not by user input.",
+        }
+        self._atomic_write_text(
+            workspace / ".sdlc" / "validation.json", json.dumps(evidence, indent=2)
+        )
+        return evidence
+
+    def static_validate(self, project_id: str) -> dict[str, Any]:
+        """Validate generated source without executing untrusted model output.
+
+        Cloud Run does not provide an isolated execution worker. This check therefore
+        verifies the materialized snapshot and parses Python syntax only; the normal
+        allow-listed test recipe remains available for deterministic/local runs.
+        """
+        workspace = self._workspace(project_id, create=False)
+        recorded_type = self._project_type(workspace)
+        if recorded_type not in self.SUPPORTED_PROJECT_TYPES:
+            raise WorkspaceError("unsupported generated project type")
+        metadata_path = workspace / ".sdlc" / "project.json"
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        files = metadata.get("files", [])
+        if not isinstance(files, list) or not files:
+            raise WorkspaceError("workspace metadata contains no generated files")
+        checks: list[dict[str, Any]] = []
+        python_files = [
+            value for value in files if isinstance(value, str) and value.endswith(".py")
+        ]
+        for value in python_files:
+            target = workspace / Path(value)
+            self._reject_symlinks(workspace, target)
+            try:
+                ast.parse(target.read_text(encoding="utf-8"), filename=value)
+                checks.append({"name": f"syntax:{value}", "passed": True})
+            except (OSError, UnicodeDecodeError, SyntaxError) as error:
+                checks.append({"name": f"syntax:{value}", "passed": False, "error": str(error)})
+        evidence = {
+            "deliverable": "static_validation_report",
+            "project_type": recorded_type,
+            "passed": bool(python_files) and all(check["passed"] for check in checks),
+            "checks": checks,
+            "command_executed": False,
+            "note": "Cloud validation parses generated source without executing model output.",
         }
         self._atomic_write_text(
             workspace / ".sdlc" / "validation.json", json.dumps(evidence, indent=2)

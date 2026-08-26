@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from .domain import AgentResult, AgentRole, ApprovalKind, RunStatus
 from .providers import AgentProvider, DeterministicAgentProvider
 from .repositories import StudioRepository
-from .workspaces import WorkspaceEngine
+from .workspaces import WorkspaceEngine, WorkspaceError
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowError(ValueError):
@@ -14,6 +17,12 @@ class WorkflowError(ValueError):
 
 
 class SDLCOrchestrator:
+    # A failed review is useful feedback, but retrying forever only burns model
+    # budget and creates duplicate deliverables. Two review attempts are enough
+    # to let the developer incorporate feedback before requiring a human decision.
+    _MAX_REVIEW_ATTEMPTS = 2
+    _MAX_STAGE_FAILURES = 3
+
     def __init__(
         self,
         repository: StudioRepository,
@@ -41,9 +50,22 @@ class SDLCOrchestrator:
             raise KeyError("project not found")
         role = AgentRole(task["agent_role"])
         context = {"project": project, "run": run, "assigned_agent": role.value}
+        if role == AgentRole.DEVELOPER:
+            review_feedback = self._latest_review_feedback(run)
+            if review_feedback is not None:
+                context["review_feedback"] = review_feedback
         try:
             result = self._run_agent(role, context, project["id"])
-        except Exception:  # Provider, workspace, and validation errors are safely isolated.
+        except Exception as error:  # Provider, workspace, and validation errors are isolated.
+            # Keep provider details out of the browser, but log the exception type so
+            # Cloud Run operators can diagnose configuration/API failures.
+            logger.exception(
+                "Agent task failed: run_id=%s task_id=%s role=%s error_type=%s",
+                run_id,
+                task["id"],
+                role.value,
+                type(error).__name__,
+            )
             self.repository.complete_task(
                 run_id,
                 task["id"],
@@ -79,21 +101,24 @@ class SDLCOrchestrator:
     def _run_agent(self, role: AgentRole, context: dict[str, Any], project_id: str) -> AgentResult:
         if role == AgentRole.TESTER:
             if type(self.provider) is not DeterministicAgentProvider:
+                try:
+                    evidence = self.workspace_engine.static_validate(project_id)
+                except WorkspaceError:
+                    return AgentResult(
+                        summary="Validation blocked: generated workspace is not available.",
+                        artifact={
+                            "deliverable": "validation_blocked",
+                            "passed": False,
+                            "command_executed": False,
+                            "reason": "isolated_worker_required",
+                        },
+                        passed=False,
+                    )
+                passed = evidence["passed"] is True
                 return AgentResult(
-                    summary=(
-                        "Validation blocked: externally generated code requires an isolated worker."
-                    ),
-                    artifact={
-                        "deliverable": "validation_blocked",
-                        "passed": False,
-                        "command_executed": False,
-                        "reason": "isolated_worker_required",
-                        "message": (
-                            "Ollama/Gemini output is never executed inside the Studio process. "
-                            "Configure an isolated validation worker before continuing."
-                        ),
-                    },
-                    passed=False,
+                    summary=f"Cloud-safe static validation {'passed' if passed else 'failed'}.",
+                    artifact=evidence,
+                    passed=passed,
                 )
             evidence = self.workspace_engine.validate(project_id)
             passed = evidence["passed"] is True
@@ -188,6 +213,22 @@ class SDLCOrchestrator:
 
     def _transition_after(self, role: AgentRole, passed: bool, run_id: str, owner_id: str) -> None:
         if not passed:
+            refreshed = self._run(run_id, owner_id)
+            stage_failures = sum(
+                task["agent_role"] == role.value
+                and task["status"] == "failed"
+                for task in refreshed["tasks"]
+            )
+            failure_limit = (
+                self._MAX_REVIEW_ATTEMPTS
+                if role == AgentRole.REVIEWER
+                else self._MAX_STAGE_FAILURES
+            )
+            if stage_failures >= failure_limit:
+                # Stop automatic retries. Preserve the latest finding and wait
+                # for an explicit human decision instead of burning tokens.
+                self.repository.set_run_status(run_id, owner_id, RunStatus.CHANGES_REQUESTED, None)
+                return
             retry_role = (
                 AgentRole.DEVELOPER if role in {AgentRole.TESTER, AgentRole.REVIEWER} else role
             )
@@ -251,3 +292,17 @@ class SDLCOrchestrator:
         if run is None:
             raise KeyError("run not found")
         return run
+
+    @staticmethod
+    def _latest_review_feedback(run: dict[str, Any]) -> dict[str, Any] | None:
+        """Return the latest reviewer result for the next developer attempt."""
+        for task in reversed(run.get("tasks", [])):
+            if task.get("agent_role") != AgentRole.REVIEWER.value:
+                continue
+            if task.get("status") not in {"completed", "failed"}:
+                continue
+            return {
+                "summary": task.get("summary", ""),
+                "artifact": task.get("artifact", ""),
+            }
+        return None
