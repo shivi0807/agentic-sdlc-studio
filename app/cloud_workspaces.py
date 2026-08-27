@@ -36,6 +36,13 @@ class CloudStorageWorkspaceEngine(WorkspaceEngine):
         self._upload_snapshot(project_id)
         return evidence
 
+    def static_validate(self, project_id: str) -> dict[str, Any]:
+        """Validate the persisted snapshot on whichever Cloud Run instance serves the request."""
+        self._download_snapshot(project_id)
+        evidence = super().static_validate(project_id)
+        self._upload_snapshot(project_id)
+        return evidence
+
     def validation_evidence(self, project_id: str) -> dict[str, Any] | None:
         self._download_snapshot(project_id)
         return super().validation_evidence(project_id)

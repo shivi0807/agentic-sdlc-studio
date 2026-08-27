@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
+from app.cloud_workspaces import CloudStorageWorkspaceEngine
 from app.workspaces import WorkspaceEngine, WorkspaceError
 
 
@@ -96,6 +98,23 @@ def test_real_allowlisted_validation_records_evidence(tmp_path: Path) -> None:
         (tmp_path / "workspaces/project-123/.sdlc/validation.json").read_text(encoding="utf-8")
     )
     assert persisted == evidence
+
+
+def test_cloud_static_validation_syncs_snapshot_before_and_after_check() -> None:
+    engine = object.__new__(CloudStorageWorkspaceEngine)
+    download_snapshot = Mock()
+    upload_snapshot = Mock()
+    engine._download_snapshot = download_snapshot  # type: ignore[method-assign]
+    engine._upload_snapshot = upload_snapshot  # type: ignore[method-assign]
+    expected = {"passed": True, "checks": []}
+
+    with patch.object(WorkspaceEngine, "static_validate", return_value=expected) as validate:
+        result = engine.static_validate("project-123")
+
+    assert result == expected
+    download_snapshot.assert_called_once_with("project-123")
+    validate.assert_called_once_with("project-123")
+    upload_snapshot.assert_called_once_with("project-123")
 
 
 def test_failing_tests_produce_real_failure_and_block_review(tmp_path: Path) -> None:
