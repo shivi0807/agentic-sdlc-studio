@@ -13,6 +13,10 @@
     <div class="heading-actions">
       <span class="project-state project-state--large"><span class="status-dot status-dot--{{ 'ok' if project.status in ['active','completed'] else 'wait' }}"></span>{{ (project.status or 'Active') | replace('_',' ') | title }}</span>
       <button class="button button--secondary" type="button" data-copy-url>Copy project link</button>
+      <form method="post" action="/projects/{{ project.id }}/delete">
+        {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+        <button class="button button--secondary button--danger" type="submit">Delete project</button>
+      </form>
     </div>
   </header>
 

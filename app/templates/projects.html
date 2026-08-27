@@ -42,7 +42,13 @@
         </div>
         <div class="project-card-footer">
           <span>{{ project.current_phase or 'Plan' }}</span>
-          <a href="/projects/{{ project.id }}">Open control room <span aria-hidden="true">→</span></a>
+          <div class="project-card-actions">
+            <a href="/projects/{{ project.id }}">Open control room <span aria-hidden="true">→</span></a>
+            <form method="post" action="/projects/{{ project.id }}/delete">
+              {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+              <button class="link-button link-button--danger" type="submit">Delete</button>
+            </form>
+          </div>
         </div>
       </article>
       {% endfor %}

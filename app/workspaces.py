@@ -94,6 +94,16 @@ class WorkspaceEngine:
             "git": git,
         }
 
+    def delete(self, project_id: str) -> None:
+        """Remove exactly one validated local project workspace."""
+        workspace = self._workspace_path(project_id)
+        if not workspace.exists():
+            return
+        if not workspace.is_dir() or workspace.is_symlink():
+            raise WorkspaceError("project workspace must be a real directory")
+        self._assert_no_symlinks(workspace)
+        shutil.rmtree(workspace)
+
     def validate(self, project_id: str, project_type: str | None = None) -> dict[str, Any]:
         """Run a fixed validation recipe; no model or user command reaches a shell."""
         workspace = self._workspace(project_id, create=False)

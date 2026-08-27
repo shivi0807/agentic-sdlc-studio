@@ -121,6 +121,35 @@ class FirestoreStudioRepository(StudioRepository):
         project = dict(snapshot.to_dict())
         return project if project.get("owner_id") == owner_id else None
 
+    def delete_project(self, project_id: str, owner_id: str) -> None:
+        """Delete one owner-owned project and its associated Firestore documents."""
+        if self.get_project(project_id, owner_id) is None:
+            raise KeyError("project not found")
+
+        run_snapshots = list(
+            self.client.collection("runs")
+            .where(filter=FieldFilter("project_id", "==", project_id))
+            .stream()
+        )
+        references: list[Any] = []
+        for run_snapshot in run_snapshots:
+            references.append(run_snapshot.reference)
+            approval_snapshots = self.client.collection("approvals").where(
+                filter=FieldFilter("run_id", "==", run_snapshot.id)
+            ).stream()
+            references.extend(snapshot.reference for snapshot in approval_snapshots)
+        audit_snapshots = self.client.collection("audit_events").where(
+            filter=FieldFilter("project_id", "==", project_id)
+        ).stream()
+        references.extend(snapshot.reference for snapshot in audit_snapshots)
+        references.append(self.client.collection("projects").document(project_id))
+
+        for offset in range(0, len(references), 450):
+            batch = self.client.batch()
+            for reference in references[offset : offset + 450]:
+                batch.delete(reference)
+            batch.commit()
+
     def create_run(self, project_id: str, owner_id: str) -> dict[str, Any]:
         project = self.get_project(project_id, owner_id)
         if project is None:

@@ -44,6 +44,13 @@ class CloudStorageWorkspaceEngine(WorkspaceEngine):
         self._download_snapshot(project_id)
         return super().review_evidence(project_id)
 
+    def delete(self, project_id: str) -> None:
+        """Remove one project's bounded Cloud Storage snapshot and local cache."""
+        prefix = self._prefix(project_id)
+        for blob in self.client.list_blobs(self.bucket, prefix=prefix):
+            blob.delete()
+        super().delete(project_id)
+
     def _prefix(self, project_id: str) -> str:
         self._workspace_path(project_id)
         return f"workspaces/{project_id}/"

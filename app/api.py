@@ -21,6 +21,10 @@ def _orchestrator(request: Request) -> SDLCOrchestrator:
     return request.app.state.orchestrator  # type: ignore[no-any-return]
 
 
+def _workspace_engine(request: Request) -> Any:
+    return request.app.state.workspace_engine
+
+
 @router.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "Agentic SDLC Studio"}
@@ -82,6 +86,17 @@ def get_project(project_id: str, request: Request, user: User) -> dict[str, Any]
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
     return project
+
+
+@router.delete("/api/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project(project_id: str, request: Request, user: User) -> None:
+    try:
+        if _repository(request).get_project(project_id, user["id"]) is None:
+            raise KeyError("project not found")
+        _workspace_engine(request).delete(project_id)
+        _repository(request).delete_project(project_id, user["id"])
+    except KeyError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
 
 
 @router.post("/api/projects/{project_id}/runs", status_code=status.HTTP_201_CREATED)

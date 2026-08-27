@@ -104,6 +104,33 @@ def test_auth_and_ownership_are_enforced(tmp_path: Path) -> None:
         assert client.get("/api/projects").status_code == 401
 
 
+def test_project_delete_removes_owner_project_and_workspace(tmp_path: Path) -> None:
+    app = create_app(settings(tmp_path / "studio.db"))
+    with TestClient(app) as client:
+        assert client.post("/auth/demo").status_code == 200
+        project = client.post(
+            "/api/projects",
+            json={
+                "name": "Disposable Demo",
+                "requirement": "Build a small text-only demonstration project.",
+                "sdlc_style": "agile",
+            },
+        ).json()
+        app.state.workspace_engine.materialize(
+            project["id"],
+            {
+                "project_type": "python-stdlib",
+                "files": {"src/__init__.py": ""},
+            },
+        )
+
+        response = client.delete(f"/api/projects/{project['id']}")
+
+        assert response.status_code == 204
+        assert client.get(f"/api/projects/{project['id']}").status_code == 404
+        assert not (tmp_path / "workspaces" / project["id"]).exists()
+
+
 def test_project_input_rejects_unsafe_workspace_and_controls(tmp_path: Path) -> None:
     app = create_app(settings(tmp_path / "studio.db"))
     with TestClient(app) as client:

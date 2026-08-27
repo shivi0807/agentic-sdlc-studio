@@ -33,6 +33,10 @@ def _orchestrator(request: Request) -> SDLCOrchestrator:
     return request.app.state.orchestrator  # type: ignore[no-any-return]
 
 
+def _workspace_engine(request: Request) -> Any:
+    return request.app.state.workspace_engine
+
+
 def _google_client(request: Request) -> GoogleOAuthClient:
     settings = request.app.state.settings
     return GoogleOAuthClient(
@@ -306,6 +310,22 @@ def create_project_page(
     )
     repository.create_run(project["id"], user["id"])
     return RedirectResponse(f"/projects/{project['id']}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/projects/{project_id}/delete")
+def delete_project_page(
+    project_id: str, request: Request, csrf_token: str = Form(...)
+) -> RedirectResponse:
+    _validate_csrf(request, csrf_token)
+    user = _require_user(request)
+    if isinstance(user, RedirectResponse):
+        return user
+    repository = _repository(request)
+    if repository.get_project(project_id, user["id"]) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+    _workspace_engine(request).delete(project_id)
+    repository.delete_project(project_id, user["id"])
+    return RedirectResponse("/projects", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/projects/{project_id}", response_class=HTMLResponse)

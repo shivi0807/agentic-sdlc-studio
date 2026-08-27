@@ -116,6 +116,18 @@ class StudioRepository:
             ).fetchone()
             return dict(row) if row else None
 
+    def delete_project(self, project_id: str, owner_id: str) -> None:
+        """Delete one owner-owned project and its cascaded delivery records."""
+        with self.database.connect() as connection:
+            connection.execute("BEGIN")
+            deleted = connection.execute(
+                "DELETE FROM projects WHERE id=? AND owner_id=?", (project_id, owner_id)
+            )
+            if deleted.rowcount != 1:
+                connection.rollback()
+                raise KeyError("project not found")
+            connection.commit()
+
     def create_run(self, project_id: str, owner_id: str) -> dict[str, Any]:
         project = self.get_project(project_id, owner_id)
         if project is None:
