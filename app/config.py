@@ -49,10 +49,18 @@ class Settings:
             raise RuntimeError("WORKSPACE_BACKEND must be local or gcs")
         firestore_project_id = os.getenv("FIRESTORE_PROJECT_ID", "")
         cloud_storage_bucket = os.getenv("CLOUD_STORAGE_BUCKET", "")
+        agent_provider = os.getenv("AGENT_PROVIDER", "deterministic").lower()
+        gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+        if agent_provider not in {"deterministic", "ollama", "gemini"}:
+            raise RuntimeError("AGENT_PROVIDER must be deterministic, ollama, or gemini")
         if environment == "production" and persistence_backend != "firestore":
             raise RuntimeError("Production requires PERSISTENCE_BACKEND=firestore")
         if environment == "production" and workspace_backend != "gcs":
             raise RuntimeError("Production requires WORKSPACE_BACKEND=gcs")
+        if environment == "production" and agent_provider != "gemini":
+            raise RuntimeError("Production requires AGENT_PROVIDER=gemini")
+        if environment == "production" and not gemini_api_key:
+            raise RuntimeError("Production requires GEMINI_API_KEY")
         if persistence_backend == "firestore" and not firestore_project_id:
             raise RuntimeError("Firestore requires FIRESTORE_PROJECT_ID")
         if workspace_backend == "gcs" and not cloud_storage_bucket:
@@ -61,10 +69,10 @@ class Settings:
             database_path=Path(os.getenv("DATABASE_PATH", "data/agentic_sdlc.db")),
             demo_auth_enabled=demo_enabled,
             cookie_secure=environment == "production",
-            agent_provider=os.getenv("AGENT_PROVIDER", "deterministic").lower(),
+            agent_provider=agent_provider,
             ollama_url=os.getenv("OLLAMA_URL", "http://127.0.0.1:11434"),
             ollama_model=os.getenv("OLLAMA_MODEL", "qwen2.5-coder:3b"),
-            gemini_api_key=os.getenv("GEMINI_API_KEY", ""),
+            gemini_api_key=gemini_api_key,
             gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite"),
             workspace_root=Path(os.getenv("WORKSPACE_ROOT", "workspaces")),
             auth_mode=auth_mode,
