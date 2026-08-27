@@ -29,6 +29,21 @@ ROLE_INSTRUCTIONS: dict[AgentRole, str] = {
     AgentRole.DEVOPS: "Prepare a reversible build and release plan; never deploy without approval.",
     AgentRole.SUPPORT: "Reproduce defects, identify root cause, and require regression coverage.",
 }
+
+ROLE_OUTPUT_CONTRACTS: dict[AgentRole, str] = {
+    AgentRole.DEVELOPER: (
+        "Your artifact must include deliverable='implementation', a project_type of either "
+        "'python-fastapi' or 'python-stdlib', and a non-empty files object. Files must map "
+        "safe slash-separated relative paths to plain text. Include valid Python source, at "
+        "least one focused automated test, and a README. Return JSON only: no Markdown fences, "
+        "binary data, image data, secrets, or executable shell commands."
+    ),
+    AgentRole.REVIEWER: (
+        "Base the decision on the supplied source excerpts and validation evidence. When the "
+        "validation evidence passed and the stated requirements are met, return passed=true. "
+        "Do not invent new requirements or claim you executed code yourself."
+    ),
+}
 MAX_PROVIDER_REQUEST_BYTES = 32_000
 MAX_REQUIREMENT_CHARS = 8_000
 _SECRET_ASSIGNMENT = re.compile(
@@ -349,11 +364,12 @@ class GeminiAgentProvider(AgentProvider):
 
     def run(self, role: AgentRole, context: dict[str, Any]) -> AgentResult:
         filtered_context = safe_provider_context(context)
+        output_contract = ROLE_OUTPUT_CONTRACTS.get(role, "Return a concise structured artifact.")
         prompt = (
             f"You are the {role.value} agent in a human-governed SDLC. "
             f"{ROLE_INSTRUCTIONS[role]} Return one JSON object with keys summary, artifact, "
             "and passed. Never claim commands ran unless evidence is present. "
-            "Do not include secrets.\nContext:\n"
+            f"Do not include secrets. {output_contract}\nContext:\n"
             f"{json.dumps(filtered_context, default=str)}"
         )
         payload = _encode_payload(

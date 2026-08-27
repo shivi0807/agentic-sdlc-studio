@@ -6,6 +6,7 @@ from app.providers import (
     GeminiAgentProvider,
     OllamaAgentProvider,
     ProviderResponseError,
+    ROLE_OUTPUT_CONTRACTS,
     safe_provider_context,
     validate_provider_result,
 )
@@ -96,6 +97,13 @@ def test_only_built_in_deterministic_provider_is_locally_trusted() -> None:
     assert DeterministicAgentProvider.trusted_for_local_execution is True
     assert OllamaAgentProvider.trusted_for_local_execution is False
     assert GeminiAgentProvider.trusted_for_local_execution is False
+
+
+def test_remote_developer_contract_requires_text_only_safe_workspace_files() -> None:
+    contract = ROLE_OUTPUT_CONTRACTS[AgentRole.DEVELOPER]
+    assert "non-empty files object" in contract
+    assert "image data" in contract
+    assert "Markdown fences" in contract
 
 
 def test_remote_context_redacts_common_secrets_and_email() -> None:
