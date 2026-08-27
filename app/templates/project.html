@@ -36,7 +36,7 @@
     <form method="post" action="/projects/{{ project.id }}/run-next-stage">
       {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
       <button class="button button--dark" type="submit" {% if run_blocked %}disabled aria-describedby="stage-blocked-reason"{% endif %}>Run next stage <span aria-hidden="true">→</span></button>
-      {% if run_blocked %}<small id="stage-blocked-reason">{{ 'This SDLC run is complete.' if project.status == 'completed' else ('Review failed repeatedly. Inspect the latest reviewer findings before retrying.' if run_blocked_reason == 'review_retry_exhausted' else 'Complete the approval gate first.') }}</small>{% endif %}
+      {% if run_blocked %}<small id="stage-blocked-reason">{{ 'This SDLC run is complete.' if project.status == 'completed' else ('Validation or review failed repeatedly. Start a new run or delete this project before retrying.' if run_blocked_reason == 'retry_exhausted' else 'Complete the approval gate first.') }}</small>{% endif %}
     </form>
   </section>
 

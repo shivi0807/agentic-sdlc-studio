@@ -94,11 +94,16 @@
         if (!response.ok) return;
         const run = await response.json();
         const tasks = run.tasks || [];
-        const current = run.current_agent || "Human approval";
         const next = tasks.find(function (task) { return task.status === "queued"; });
+        const retryExhausted = run.status === "changes_requested" && !next;
+        const current = retryExhausted ? "Changes requested" : (run.current_agent || "Human approval");
+        const nextLabel = retryExhausted ? "Human decision" : (next ? next.agent_role : "Release decision");
+        const relationship = retryExhausted
+          ? "Validation findings → human decision"
+          : current + " → " + (next ? next.agent_role : "release");
         setText('[data-coordination="current"]', current);
-        setText('[data-coordination="next"]', next ? next.agent_role : "Release decision");
-        setText('[data-coordination="relationship"]', current + " → " + (next ? next.agent_role : "release"));
+        setText('[data-coordination="next"]', nextLabel);
+        setText('[data-coordination="relationship"]', relationship);
         ["working", "queued", "completed"].forEach(function (taskStatus) {
           const count = tasks.filter(function (task) { return task.status === taskStatus; }).length;
           setText('[data-coordination="' + taskStatus + '"]', count);

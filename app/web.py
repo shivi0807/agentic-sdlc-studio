@@ -467,14 +467,24 @@ def _project_context(
         )
     current_agent = run.get("current_agent") if run else None
     next_task = next((task for task in tasks if task["status"] == "queued"), None)
-    coordination = {
-        "current": current_agent.title() if isinstance(current_agent, str) else "Human approval",
-        "next": next_task["agent_role"].title() if next_task else "Release decision",
-        "relationship": (
+    run_status = run["status"] if run else RunStatus.PLANNING.value
+    retry_exhausted = run_status == RunStatus.CHANGES_REQUESTED.value and not next_task
+    if retry_exhausted:
+        current_label = "Changes requested"
+        next_label = "Human decision"
+        relationship = "Validation findings → human decision"
+    else:
+        current_label = current_agent.title() if isinstance(current_agent, str) else "Human approval"
+        next_label = next_task["agent_role"].title() if next_task else "Release decision"
+        relationship = (
             f"{current_agent.title()} → {next_task['agent_role'].title()}"
             if isinstance(current_agent, str) and next_task
             else "Human → delivery team"
-        ),
+        )
+    coordination = {
+        "current": current_label,
+        "next": next_label,
+        "relationship": relationship,
         "working": sum(task["status"] == "running" for task in tasks),
         "queued": sum(task["status"] == "queued" for task in tasks),
         "completed": sum(task["status"] == "completed" for task in tasks),
@@ -486,7 +496,6 @@ def _project_context(
             "title": "Approve the delivery plan",
             "description": "Review Product and Architecture outputs before implementation.",
         }
-    run_status = run["status"] if run else RunStatus.PLANNING.value
     has_queued_task = bool(run and any(task["status"] == "queued" for task in run["tasks"]))
     review_retry_blocked = run_status == RunStatus.CHANGES_REQUESTED.value and not has_queued_task
     run_blocked = (
@@ -506,7 +515,7 @@ def _project_context(
         "current_phase": phase,
         "approval_gate": approval_gate,
         "run_blocked": run_blocked,
-        "run_blocked_reason": "review_retry_exhausted" if review_retry_blocked else "approval",
+        "run_blocked_reason": "retry_exhausted" if review_retry_blocked else "approval",
         "release_gate": run_status == RunStatus.AWAITING_RELEASE_APPROVAL.value,
         "plan": plan,
         "implementation": {"completed": 0, "total": 1, "changes": []},
